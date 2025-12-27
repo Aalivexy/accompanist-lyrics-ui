@@ -100,7 +100,8 @@ fun KaraokeLyricsView(
         }
     },
     breathingDotsDefaults: KaraokeBreathingDotsDefaults = KaraokeBreathingDotsDefaults(),
-    scrollOffset: Float? = null
+    scrollOffset: Float? = null,
+    blendMode: BlendMode = BlendMode.Plus
 ) {
     val currentTimeMs by rememberUpdatedState(currentPosition.toInt())
 
@@ -269,7 +270,8 @@ fun KaraokeLyricsView(
                                     ),
                                 normalLineTextStyle = normalLineTextStyle,
                                 accompanimentLineTextStyle = accompanimentLineTextStyle,
-                                activeColor = textColor
+                                activeColor = textColor,
+                                blendMode = blendMode
                             )
                         } else {
                             val isCurrentFocusLine by rememberUpdatedState(
@@ -311,7 +313,8 @@ fun KaraokeLyricsView(
                                         .fillMaxWidth(if (isDuoView) 0.85f else 1f).alpha(0.8f),
                                     normalLineTextStyle = normalLineTextStyle,
                                     accompanimentLineTextStyle = accompanimentLineTextStyle,
-                                    activeColor = textColor
+                                    activeColor = textColor,
+                                    blendMode = blendMode
                                 )
                             }
                         }
@@ -352,6 +355,7 @@ fun KaraokeLyricsView(
                                     scaleY = animatedScale
                                     alpha = alphaAnimation
                                     transformOrigin = TransformOrigin(0f, 1f)
+                                    this.blendMode = blendMode
                                 },
                         ) {
                             Column(
