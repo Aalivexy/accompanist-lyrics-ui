@@ -4,7 +4,6 @@ import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.EaseInOut
 import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
@@ -55,8 +54,11 @@ import com.mocharealm.accompanist.lyrics.core.model.karaoke.KaraokeSyllable
 import com.mocharealm.accompanist.lyrics.ui.utils.easing.Bounce
 import com.mocharealm.accompanist.lyrics.ui.utils.easing.DipAndRise
 import com.mocharealm.accompanist.lyrics.ui.utils.easing.Swell
+import com.mocharealm.accompanist.lyrics.ui.utils.isArabic
+import com.mocharealm.accompanist.lyrics.ui.utils.isDevanagari
 import com.mocharealm.accompanist.lyrics.ui.utils.isPunctuation
 import com.mocharealm.accompanist.lyrics.ui.utils.isPureCjk
+import com.mocharealm.accompanist.lyrics.ui.utils.isRtl
 import com.mocharealm.gaze.capsule.ContinuousRoundedRectangle
 import kotlin.math.pow
 import kotlin.math.roundToInt
@@ -75,6 +77,14 @@ data class WordAnimationInfo(
 data class WrappedLine(
     val syllables: List<SyllableLayout>, val totalWidth: Float
 )
+
+private fun String.shouldUseSimpleAnimation(): Boolean {
+    val cleanedStr = this.filter { !it.isWhitespace() && !it.toString().isPunctuation() }
+    if (cleanedStr.isEmpty()) return false
+
+    // If the string is purely CJK, or contains any Arabic or Devanagari characters
+    return cleanedStr.isPureCjk() || cleanedStr.any { it.isArabic() || it.isDevanagari() }
+}
 
 private fun groupIntoWords(syllables: List<KaraokeSyllable>): List<List<KaraokeSyllable>> {
     if (syllables.isEmpty()) return emptyList()
@@ -116,7 +126,7 @@ private fun measureSyllablesAndDetermineAnimation(
 
         val useAwesomeAnimation =
             perCharDuration > fastCharAnimationThresholdMs && wordDuration >= 1000
-                    && !wordContent.isPureCjk()
+                    && !wordContent.shouldUseSimpleAnimation()
                     && !isAccompanimentLine
 
         word.map { syllable ->
@@ -170,7 +180,6 @@ private fun calculateBalancedLines(
     textMeasurer: TextMeasurer,
     style: TextStyle
 ): List<WrappedLine> {
-//    if (syllableLayouts.all { !it.syllable.content.trim().isPureCjk() }) return calculateGreedyWrappedLines(syllableLayouts, availableWidthPx, textMeasurer, style)
     if (syllableLayouts.isEmpty()) return emptyList()
 
     val n = syllableLayouts.size
@@ -216,25 +225,44 @@ private fun calculateBalancedLines(
  * output "complete" SyllableLayout list.
  */
 private fun calculateStaticLineLayout(
-    wrappedLines: List<WrappedLine>, lineAlignment: Alignment, canvasWidth: Float, lineHeight: Float
+    wrappedLines: List<WrappedLine>,
+    lineAlignment: Alignment,
+    canvasWidth: Float,
+    lineHeight: Float,
+    isRtl: Boolean
 ): List<List<SyllableLayout>> {
     val layoutsByWord = mutableMapOf<Int, MutableList<SyllableLayout>>()
 
     // Pass 1: Calculate initial position, update SyllableLayout objects with .copy(). Also group by wordId.
     val positionedLines = wrappedLines.mapIndexed { lineIndex, wrappedLine ->
         val lineY = lineIndex * lineHeight
+
+        // Horizontal positioning logic
         val startX = when (lineAlignment) {
             Alignment.TopStart -> 0f
             Alignment.TopEnd -> canvasWidth - wrappedLine.totalWidth
             else -> (canvasWidth - wrappedLine.totalWidth) / 2f
         }
-        var currentX = startX
+
+        var currentX = if (isRtl) startX + wrappedLine.totalWidth else startX
 
         wrappedLine.syllables.map { initialLayout ->
-            val positionedLayout = initialLayout.copy(position = Offset(currentX, lineY))
+            val positionX = if (isRtl) {
+                currentX - initialLayout.width
+            } else {
+                currentX
+            }
+
+            val positionedLayout = initialLayout.copy(position = Offset(positionX, lineY))
             layoutsByWord.getOrPut(positionedLayout.wordId) { mutableListOf() }
                 .add(positionedLayout)
-            currentX += positionedLayout.width
+
+            if (isRtl) {
+                currentX -= positionedLayout.width
+            } else {
+                currentX += positionedLayout.width
+            }
+
             positionedLayout
         }
     }
@@ -277,6 +305,7 @@ private fun calculateStaticLineLayout(
 private fun createLineGradientBrush(
     lineLayout: List<SyllableLayout>,
     currentTimeMs: Int,
+    isRtl: Boolean
 ): Brush {
     val activeColor = Color.White
     val inactiveColor = Color.White.copy(alpha = 0.2f)
@@ -286,7 +315,10 @@ private fun createLineGradientBrush(
         return Brush.horizontalGradient(colors = listOf(inactiveColor, inactiveColor))
     }
 
-    val totalWidth = lineLayout.last().let { it.position.x + it.width }
+    val totalMinX = lineLayout.minOf { it.position.x }
+    val totalMaxX = lineLayout.maxOf { it.position.x + it.width }
+    val totalWidth = totalMaxX - totalMinX
+
     if (totalWidth <= 0f) {
         val isFinished = currentTimeMs >= lineLayout.last().syllable.end
         val color = if (isFinished) activeColor else inactiveColor
@@ -298,52 +330,73 @@ private fun createLineGradientBrush(
 
     val lineProgress = run {
         if (currentTimeMs <= firstSyllableStart) return Brush.horizontalGradient(
-            listOf(
-                inactiveColor, inactiveColor
-            )
+            listOf(inactiveColor, inactiveColor)
         )
         if (currentTimeMs >= lastSyllableEnd) return Brush.horizontalGradient(
-            listOf(
-                activeColor, activeColor
-            )
+            listOf(activeColor, activeColor)
         )
 
         val activeSyllableLayout = lineLayout.find {
             currentTimeMs in it.syllable.start until it.syllable.end
         }
+
         val currentPixelPosition = when {
             activeSyllableLayout != null -> {
                 val syllableProgress = activeSyllableLayout.syllable.progress(currentTimeMs)
-                activeSyllableLayout.position.x + activeSyllableLayout.width * syllableProgress
+                if (isRtl) {
+                    // RTL: Progress moves from Right (width) to Left (0) within the syllable
+                    activeSyllableLayout.position.x + activeSyllableLayout.width * (1f - syllableProgress)
+                } else {
+                    // LTR: Progress moves from Left (0) to Right (width) within the syllable
+                    activeSyllableLayout.position.x + activeSyllableLayout.width * syllableProgress
+                }
             }
-
             else -> {
+                // Determine if we are between syllables
                 val lastFinished = lineLayout.lastOrNull { currentTimeMs >= it.syllable.end }
-                lastFinished?.let { it.position.x + it.width } ?: 0f
+                if (isRtl) {
+                    // RTL: Last finished means we passed it going left. Use its Left edge.
+                    lastFinished?.position?.x ?: totalMaxX
+                } else {
+                    // LTR: Last finished means we passed it going right. Use its Right edge.
+                    lastFinished?.let { it.position.x + it.width } ?: totalMinX
+                }
             }
         }
-        (currentPixelPosition / totalWidth).coerceIn(0f, 1f)
+        // Normalize position relative to the line width (0..1)
+        ((currentPixelPosition - totalMinX) / totalWidth).coerceIn(0f, 1f)
     }
 
     val fadeRange = (minFadeWidth / totalWidth).coerceAtMost(1f)
-
     val fadeCenterStart = -fadeRange / 2f
     val fadeCenterEnd = 1f + fadeRange / 2f
-
     val fadeCenter = fadeCenterStart + (fadeCenterEnd - fadeCenterStart) * lineProgress
-
     val fadeStart = fadeCenter - fadeRange / 2f
     val fadeEnd = fadeCenter + fadeRange / 2f
 
-    val colorStops = arrayOf(
-        0.0f to activeColor,
-        fadeStart.coerceIn(0f, 1f) to activeColor,
-        fadeEnd.coerceIn(0f, 1f) to inactiveColor,
-        1.0f to inactiveColor
-    )
+    val colorStops = if (isRtl) {
+        // RTL Gradient: Left side is Inactive (future), Right side is Active (past)
+        // Order of stops is 0.0 (Left) -> 1.0 (Right)
+        arrayOf(
+            0.0f to inactiveColor,
+            fadeStart.coerceIn(0f, 1f) to inactiveColor,
+            fadeEnd.coerceIn(0f, 1f) to activeColor,
+            1.0f to activeColor
+        )
+    } else {
+        // LTR Gradient: Left side is Active (past), Right side is Inactive (future)
+        arrayOf(
+            0.0f to activeColor,
+            fadeStart.coerceIn(0f, 1f) to activeColor,
+            fadeEnd.coerceIn(0f, 1f) to inactiveColor,
+            1.0f to inactiveColor
+        )
+    }
 
     return Brush.horizontalGradient(
-        colorStops = colorStops, endX = totalWidth
+        colorStops = colorStops,
+        startX = totalMinX,
+        endX = totalMaxX
     )
 }
 
@@ -354,25 +407,27 @@ fun DrawScope.drawLine(
     color: Color,
     textMeasurer: TextMeasurer,
     blendMode: BlendMode,
+    isRtl: Boolean,
     showDebugRectangles: Boolean = false
 ) {
     lineLayouts.forEach { rowLayouts ->
         if (rowLayouts.isEmpty()) return@forEach
 
-        val firstSyllableLayout = rowLayouts.first()
-        val lastSyllableLayout = rowLayouts.last()
+        val minX = rowLayouts.minOf { it.position.x }
+        val maxX = rowLayouts.maxOf { it.position.x + it.width }
+        val minY = rowLayouts.minOf { it.position.y }
         val totalHeight = rowLayouts.maxOf { it.textLayoutResult.size.height }.toFloat()
-        val totalWidth = rowLayouts.maxOf { it.textLayoutResult.size.width }.toFloat()
 
+        // Use calculated min/max bounds instead of first/last layout which might differ in RTL
         val verticalPadding = (totalHeight * 0.1).dp.toPx()
-        val horizontalPadding = (totalWidth * 0.2).dp.toPx()
+        val horizontalPadding = ((maxX - minX) * 0.2).dp.toPx()
 
         drawIntoCanvas { canvas ->
             val layerBounds = Rect(
-                left = firstSyllableLayout.position.x - horizontalPadding,
-                top = firstSyllableLayout.position.y - verticalPadding,
-                right = lastSyllableLayout.position.x + lastSyllableLayout.width + horizontalPadding,
-                bottom = firstSyllableLayout.position.y + totalHeight + verticalPadding
+                left = minX - horizontalPadding,
+                top = minY - verticalPadding,
+                right = maxX + horizontalPadding,
+                bottom = minY + totalHeight + verticalPadding
             )
             canvas.saveLayer(layerBounds, Paint())
 
@@ -445,7 +500,11 @@ fun DrawScope.drawLine(
                     // For punctuation, find the previous non-punctuation syllable to calculate rise animation
                     val progressSyllable =
                         if (syllableLayout.syllable.content.trim().isPunctuation()) {
-                            // Search forward for the first non-punctuation syllable
+                            // Search forward (or backward depending on visual order?)
+                            // Logic here uses list index, which is layout order.
+                            // In RTL, rowLayouts is ordered Right-to-Left visually?
+                            // No, rowLayouts comes from calculateStaticLineLayout which iterates syllables in Logical Time Order.
+                            // So 'index' is consistent with Time.
                             var searchIndex = index - 1
                             while (searchIndex >= 0) {
                                 val candidateSyllable = rowLayouts[searchIndex]
@@ -486,7 +545,7 @@ fun DrawScope.drawLine(
                 }
             }
 
-            val progressBrush = createLineGradientBrush(rowLayouts, currentTimeMs)
+            val progressBrush = createLineGradientBrush(rowLayouts, currentTimeMs, isRtl)
             drawRect(
                 brush = progressBrush,
                 topLeft = layerBounds.topLeft,
@@ -516,11 +575,11 @@ fun KaraokeLineText(
 
     val animatedScale by animateFloatAsState(
         targetValue = if (isFocused) 1f else 0.98f, animationSpec = if (isFocused) {
-           tween(
+            androidx.compose.animation.core.tween(
                 durationMillis = 600, easing = LinearOutSlowInEasing
             )
         } else {
-            tween(
+            androidx.compose.animation.core.tween(
                 durationMillis = 300, easing = EaseInOut
             )
         }, label = "scale"
@@ -556,6 +615,11 @@ fun KaraokeLineText(
 
                 val textStyle = remember(line.isAccompaniment) {
                     if (line.isAccompaniment) accompanimentLineTextStyle else normalLineTextStyle
+                }
+
+                // Detect RTL
+                val isRtl = remember(line.syllables) {
+                    line.syllables.any { it.content.isRtl() }
                 }
 
                 // 1. Measure and produce "semi-finished" Layout objects
@@ -596,12 +660,13 @@ fun KaraokeLineText(
                 }
 
                 // 3. Calculate final position and animation parameters, get "complete" Layout objects
-                val finalLineLayouts = remember(wrappedLines, availableWidthPx, lineHeight) {
+                val finalLineLayouts = remember(wrappedLines, availableWidthPx, lineHeight, isRtl) {
                     calculateStaticLineLayout(
                         wrappedLines = wrappedLines,
                         lineAlignment = if (line.alignment == KaraokeAlignment.End) Alignment.TopEnd else Alignment.TopStart,
                         canvasWidth = availableWidthPx,
-                        lineHeight = lineHeight
+                        lineHeight = lineHeight,
+                        isRtl = isRtl
                     )
                 }
 
@@ -615,7 +680,8 @@ fun KaraokeLineText(
                         currentTimeMs = currentTimeMs,
                         color = activeColor,
                         textMeasurer = textMeasurer,
-                        blendMode = blendMode
+                        blendMode = blendMode,
+                        isRtl = isRtl
                     )
                 }
             }
@@ -681,4 +747,3 @@ private fun Int.toDp(): Dp = with(LocalDensity.current) { this@toDp.toDp() }
 @Composable
 private fun IntSize.toDpSize(): DpSize =
     with(LocalDensity.current) { DpSize(width.toDp(), height.toDp()) }
-
