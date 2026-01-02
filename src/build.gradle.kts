@@ -41,6 +41,7 @@ kotlin {
                 implementation(compose.components.uiToolingPreview)
 
                 implementation(libs.gaze.capsule)
+                implementation(libs.gaze.glassy.core)
 
                 implementation(libs.accompanist.lyrics.core)
 
@@ -89,4 +90,8 @@ mavenPublishing {
             developerConnection = "scm:git:ssh://git@github.com/6xingyv/Accompanist.git"
         }
     }
+}
+
+composeCompiler {
+    stabilityConfigurationFiles.add(rootProject.layout.projectDirectory.file("compose-compiler-config.conf"))
 }

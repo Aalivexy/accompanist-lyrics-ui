@@ -8,6 +8,7 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.compose.compiler)
     alias(libs.plugins.maven.publish)
+    alias(libs.plugins.stability.analyzer)
 }
 
 kotlin {
@@ -146,4 +147,8 @@ compose {
             }
         )
     }
+}
+
+composeCompiler {
+    stabilityConfigurationFiles.add(rootProject.layout.projectDirectory.file("compose-compiler-config.conf"))
 }

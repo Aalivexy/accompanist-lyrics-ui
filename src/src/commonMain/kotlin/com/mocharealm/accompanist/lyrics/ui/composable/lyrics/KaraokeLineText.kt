@@ -28,7 +28,6 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Paint
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.drawscope.DrawScope
@@ -53,6 +52,7 @@ import com.mocharealm.accompanist.lyrics.core.model.ISyncedLine
 import com.mocharealm.accompanist.lyrics.core.model.karaoke.KaraokeAlignment
 import com.mocharealm.accompanist.lyrics.core.model.karaoke.KaraokeLine
 import com.mocharealm.accompanist.lyrics.core.model.karaoke.KaraokeSyllable
+import com.mocharealm.accompanist.lyrics.ui.utils.LayerPaint
 import com.mocharealm.accompanist.lyrics.ui.utils.easing.Bounce
 import com.mocharealm.accompanist.lyrics.ui.utils.easing.DipAndRise
 import com.mocharealm.accompanist.lyrics.ui.utils.easing.Swell
@@ -64,13 +64,6 @@ import com.mocharealm.accompanist.lyrics.ui.utils.isRtl
 import com.mocharealm.gaze.capsule.ContinuousRoundedRectangle
 import kotlin.math.pow
 import kotlin.math.roundToInt
-
-// 静态 Brush 避免重复创建
-private val InactiveBrush = Brush.horizontalGradient(listOf(Color.White.copy(0.2f), Color.White.copy(0.2f)))
-private val ActiveBrush = Brush.horizontalGradient(listOf(Color.White, Color.White))
-
-// 静态 Paint 用于 saveLayer，避免重复分配
-private val LayerPaint = Paint()
 
 data class SyllableLayout(
     val syllable: KaraokeSyllable,
@@ -490,7 +483,6 @@ fun DrawScope.drawLine(
     lineLayouts: List<List<SyllableLayout>>,
     currentTimeMs: Int,
     color: Color,
-    textMeasurer: TextMeasurer,
     blendMode: BlendMode,
     isRtl: Boolean,
     showDebugRectangles: Boolean = false
@@ -828,7 +820,6 @@ fun KaraokeLineText(
                         lineLayouts = finalLineLayouts,
                         currentTimeMs = time,
                         color = activeColor,
-                        textMeasurer = textMeasurer,
                         blendMode = blendMode,
                         isRtl = isRtl,
                         showDebugRectangles = showDebugRectangles

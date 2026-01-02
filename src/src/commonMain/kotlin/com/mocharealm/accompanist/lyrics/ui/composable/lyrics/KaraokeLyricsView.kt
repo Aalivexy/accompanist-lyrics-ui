@@ -44,9 +44,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.graphics.BlendMode
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.TransformOrigin
@@ -58,12 +56,14 @@ import androidx.compose.ui.text.style.TextMotion
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.util.fastRoundToInt
 import com.mocharealm.accompanist.lyrics.core.model.ISyncedLine
 import com.mocharealm.accompanist.lyrics.core.model.SyncedLyrics
 import com.mocharealm.accompanist.lyrics.core.model.karaoke.KaraokeAlignment
 import com.mocharealm.accompanist.lyrics.core.model.karaoke.KaraokeLine
 import com.mocharealm.accompanist.lyrics.core.model.synced.SyncedLine
 import com.mocharealm.accompanist.lyrics.ui.utils.isRtl
+import com.mocharealm.accompanist.lyrics.ui.utils.modifier.dynamicFadingEdge
 import com.mocharealm.gaze.capsule.ContinuousRoundedRectangle
 import kotlin.math.abs
 
@@ -87,18 +87,6 @@ fun KaraokeLyricsView(
         textMotion = TextMotion.Animated,
     ),
     textColor: Color = Color.White,
-    verticalFadeMask: Modifier = Modifier.drawWithCache {
-        val fadeBrush = Brush.verticalGradient(
-            0f to Color.Transparent,
-            0.1f to Color.White,
-            0.5f to Color.White,
-            1f to Color.Transparent
-        )
-        onDrawWithContent {
-            drawContent()
-            drawRect(fadeBrush, blendMode = BlendMode.DstIn)
-        }
-    },
     breathingDotsDefaults: KaraokeBreathingDotsDefaults = KaraokeBreathingDotsDefaults(),
     blendMode: BlendMode = BlendMode.Plus,
     useBlurEffect: Boolean = true,
@@ -204,24 +192,22 @@ fun KaraokeLyricsView(
     }
     LaunchedEffect(showDotInIntro) {
         if (showDotInIntro) {
-            // 强制滚动到顶部，忽略轻微的交互锁定（除非用户正在剧烈拖动）
             if (!listState.isScrollInProgress) {
-                listState.animateScrollToItem(0)
+                val layoutInfo = listState.layoutInfo
+                val beforeContentPadding = layoutInfo.beforeContentPadding
+                val targetVisualY = (-beforeContentPadding.toFloat()) + with(density) { 46.dp.toPx() }
+                listState.animateScrollToItem(0,targetVisualY.fastRoundToInt())
             }
         }
     }
 
-    // 3. 修复常规滚动逻辑：移除 visibleAccompanimentIndices
     LaunchedEffect(
         finalFirstFocusedLineIndex, showDotInPause
-    ) { // <- 移除 visibleAccompanimentIndices
+    ) {
         if (isUserInteracting) return@LaunchedEffect
-        if (showDotInIntro) return@LaunchedEffect // Intro 由上方逻辑处理
+        if (showDotInIntro) return@LaunchedEffect
         if (showDotInPause) return@LaunchedEffect
 
-        // ... (原有的滚动计算逻辑)
-
-        // 目标索引 = 歌词索引 + Header数量
         val targetListIndex = finalFirstFocusedLineIndex + headerItemCount
 
         if (finalFirstFocusedLineIndex < 0 || finalFirstFocusedLineIndex >= lyrics.lines.size) {
@@ -265,13 +251,10 @@ fun KaraokeLyricsView(
         Box(Modifier.fillMaxSize()) {
             LazyColumn(
                 state = listState,
-                modifier = modifier.fillMaxSize().graphicsLayer {
-                    compositingStrategy = CompositingStrategy.Offscreen
-                }.then(verticalFadeMask),
+                modifier = modifier.fillMaxSize(),
                 contentPadding = PaddingValues(vertical = 300.dp)
             ) {
                 item(key = "intro-dots") {
-                    // 即使不显示，Item 依然存在（但在视觉上收缩），防止索引瞬间变化
                     AnimatedVisibility(
                         visible = showDotInIntro,
                         enter = expandVertically() + fadeIn(),
@@ -310,7 +293,8 @@ fun KaraokeLyricsView(
 //                    )
 //                } else remember { mutableStateOf(0.dp) }
 
-                    Column(modifier = Modifier.fillMaxWidth()) {
+                    val listIndex = index + headerItemCount
+                    Column(modifier = Modifier.fillMaxWidth().dynamicFadingEdge(listState, listIndex)) {
                         val animDuration = 600
 
                         val previousLine = lyrics.lines.getOrNull(index - 1)

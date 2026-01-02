@@ -4,9 +4,12 @@ import androidx.compose.animation.core.EaseInQuart
 import androidx.compose.animation.core.Easing
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Paint
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.util.lerp
+
+val LayerPaint = Paint()
 
 fun Brush.Companion.easedHorizontalGradient(
     vararg colorStops: Pair<Float, Color>,

@@ -7,7 +7,7 @@ activityCompose = "1.11.0"
 media3Exoplayer = "1.8.0"
 media3Session = "1.8.0"
 compose = "1.9.3"
-kotlinx-serialization = "2.2.20"
+kotlinx-serialization = "2.2.21"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -34,3 +34,4 @@ compose-compiler = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "
 kotlinx-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlinx-serialization" }
 maven-publish = { id = "com.vanniktech.maven.publish.base", version = "0.34.0" }
 android-kotlin-multiplatform-library = { id = "com.android.kotlin.multiplatform.library", version.ref = "agp" }
+stability-analyzer = { id = "com.github.skydoves.compose.stability.analyzer", version = "0.6.4" }
