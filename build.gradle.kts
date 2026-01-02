@@ -8,4 +8,4 @@ plugins {
     alias(libs.plugins.android.kotlin.multiplatform.library) apply false
 }
 
-version = "1.0.12"
+version = "1.0.13"

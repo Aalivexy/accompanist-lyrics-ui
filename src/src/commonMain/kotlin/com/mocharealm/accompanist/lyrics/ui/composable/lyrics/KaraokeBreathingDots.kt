@@ -24,6 +24,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.mocharealm.accompanist.lyrics.core.model.karaoke.KaraokeAlignment
 import kotlin.math.PI
+import kotlin.math.cos
 import kotlin.math.sin
 
 data class KaraokeBreathingDotsDefaults(
@@ -51,32 +52,26 @@ fun KaraokeBreathingDots(
         val margin = with(LocalDensity.current) { defaults.margin.toPx() }
         val totalWidth = size * defaults.number + margin * (defaults.number - 1)
 
-        // --- Animation phase definitions ---
         val enterDuration = defaults.enterDurationMs.toFloat()
         val exitDuration = defaults.exitDurationMs.toFloat()
         val preExitStillDuration = defaults.preExitStillDuration.toFloat()
         val preExitDipAndRiseDuration = defaults.preExitDipAndRiseDuration.toFloat()
 
-        // --- Animation phase timing calculation (calculated backwards from end) ---
         val exitStartTime = endTimeMs - exitDuration
         val preExitStillStartTime = exitStartTime - preExitStillDuration
         val preExitDipAndRiseStartTime = preExitStillStartTime - preExitDipAndRiseDuration
         val breathingStartTime = startTimeMs + enterDuration
         val breathingDuration = preExitDipAndRiseStartTime - breathingStartTime
 
-        // --- Animation state variable calculation ---
         var scale: Float
         var alpha: Float
         var revealProgress: Float
 
         val currentTime = currentTimeMs.toFloat()
-
-        // Define core parameters for breathing animation
         val breathingAmplitude = 0.1f // Amplitude (0.8 to 1.0)
         val breathingCenter = 0.9f  // Center
-        val breathingTrough = breathingCenter - breathingAmplitude // Trough value (0.8)
+        val breathingTrough = breathingCenter - breathingAmplitude
 
-        // Check if total duration is too short, use simplified fallback animation if so
         if (breathingDuration < 0) {
             val overallProgress = when {
                 currentTime < startTimeMs + enterDuration -> (currentTime - startTimeMs) / enterDuration
@@ -88,57 +83,49 @@ fun KaraokeBreathingDots(
             alpha = overallProgress
             revealProgress = if (currentTime < startTimeMs + enterDuration) overallProgress else 1f
         } else {
-            // Complete multi-stage animation logic
             when {
-                // 1. Enter phase
+                // 1. Enter phase (0.0 -> 0.8)
                 currentTime < breathingStartTime -> {
-                    val linearProgress = (currentTime - startTimeMs) / enterDuration
-                    // --- FIX: Apply easing curve to make animation end with zero velocity ---
-                    val easedProgress = FastOutSlowInEasing.transform(linearProgress)
-
-                    alpha = easedProgress
-                    // --- FIX: Animation target is the starting point of breathing animation (trough) ---
-                    scale = easedProgress * breathingTrough
-                    revealProgress = easedProgress
+                    val progress = (currentTime - startTimeMs) / enterDuration
+                    alpha = FastOutSlowInEasing.transform(progress)
+                    scale = alpha * 0.8f
+                    revealProgress = alpha
                 }
-                // 2. Breathing phase
+
+                // 2. Breathing phase (0.8 <-> 1.0)
                 currentTime < preExitDipAndRiseStartTime -> {
                     alpha = 1f
                     revealProgress = 1f
                     val timeInPhase = currentTime - breathingStartTime
-                    // --- FIX: Adjust starting phase to smoothly start animation from rest point (trough) ---
-                    val angle = (timeInPhase / 3000f) * 2 * PI - (PI / 2f) // 3000ms per breathing cycle
-                    scale = breathingCenter + breathingAmplitude * sin(angle.toFloat())
+                    val angle = (timeInPhase / 3000f) * 2 * PI
+                    scale = 0.9f - 0.1f * cos(angle.toFloat())
                 }
-                // 3. Pre-exit - "Deep breath" (contract and expand)
+
+                // 3. Pre-exit
                 currentTime < preExitStillStartTime -> {
                     alpha = 1f
                     revealProgress = 1f
                     val phaseProgress = (currentTime - preExitDipAndRiseStartTime) / preExitDipAndRiseDuration
 
-                    if (phaseProgress < 0.5f) {
-                        val shrinkProgress = phaseProgress * 2f
-                        val angle = shrinkProgress * PI / 2f
-                        val sinValue = sin(angle.toFloat())
-                        scale = 0.9f - sinValue * 0.3f
-                    } else {
-                        val growProgress = (phaseProgress - 0.5f) * 2f
-                        val angle = growProgress * PI / 2f
-                        val sinValue = sin(angle.toFloat())
-                        scale = 0.6f + sinValue * 0.4f
-                    }
+                    val angle = phaseProgress * 2 * PI
+                    val cosValue = cos(angle.toFloat()) // 1 -> -1 -> 1
+
+                    scale = 0.8f + 0.2f * cosValue
                 }
-                // 4. Pre-exit - Still
+
+                // 4. Still
                 currentTime < exitStartTime -> {
                     alpha = 1f
                     revealProgress = 1f
                     scale = 1.0f
                 }
-                // 5. Exit phase
+
+                // 5. Exit phase (1.0 -> 0.0)
                 else -> {
-                    val progress = (endTimeMs - currentTime) / exitDuration
-                    alpha = progress.coerceIn(0f, 1f)
-                    scale = 1.0f * progress.coerceIn(0f, 1f)
+                    val progress = ((endTimeMs - currentTime) / exitDuration).coerceIn(0f, 1f)
+                    val eased = FastOutSlowInEasing.transform(progress)
+                    alpha = eased
+                    scale = eased
                     revealProgress = 1f
                 }
             }

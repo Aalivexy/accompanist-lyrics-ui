@@ -3,7 +3,9 @@ package com.mocharealm.accompanist.lyrics.ui.composable.lyrics
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.ExperimentalSharedTransitionApi
+import androidx.compose.animation.core.EaseInOut
 import androidx.compose.animation.core.EaseInOutCubic
+import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -156,13 +158,77 @@ fun KaraokeLyricsView(
 
     val headerItemCount = 1
     val density = LocalDensity.current
-    LaunchedEffect(finalFirstFocusedLineIndex) {
+    val showDotInPause by remember(lyrics.lines, currentTimeMs) {
+        derivedStateOf {
+            lyrics.lines.indices.any { index ->
+                val line = lyrics.lines[index]
+                val previousLine = lyrics.lines.getOrNull(index - 1)
+                previousLine != null &&
+                        (line.start - previousLine.end > 5000) &&
+                        (currentTimeMs in previousLine.end..line.start)
+            }
+        }
+    }
+    val firstLine = lyrics.lines.firstOrNull() ?: SyncedLine("", null, 0, 0)
+    val showDotInIntro = remember(firstLine, currentTimeMs) {
+        (firstLine.start > 5000) && (currentTimeMs in 0 until firstLine.start)
+    }
+    val allFocusedLineIndex by rememberUpdatedState(
+        lyrics.getCurrentAllHighlightLineIndicesByTime(
+            currentTimeMs
+        )
+    )
+    val accompanimentVisibilityRanges = remember(lyrics.lines) {
+        val map = mutableMapOf<Int, LongRange>()
+        val mainLines = lyrics.lines.filter { it !is KaraokeLine || !it.isAccompaniment }
+        if (mainLines.isNotEmpty()) {
+            lyrics.lines.forEachIndexed { index, line ->
+                if (line is KaraokeLine && line.isAccompaniment) {
+                    val entryAnchor =
+                        mainLines.findLast { it.start <= line.start } ?: mainLines.firstOrNull()
+                    val exitAnchor =
+                        mainLines.firstOrNull { it.end >= line.end } ?: mainLines.lastOrNull()
+                    val visualStartTime = (entryAnchor?.start ?: line.start) - 600L
+                    val visualEndTime = (exitAnchor?.end ?: line.end) + 600L
+                    map[index] = visualStartTime..visualEndTime
+                }
+            }
+        }
+        map
+    }
+    val visibleAccompanimentIndices by remember(lyrics.lines, currentTimeMs) {
+        derivedStateOf {
+            accompanimentVisibilityRanges.filter { (_, range) ->
+                currentTimeMs in range
+            }.keys
+        }
+    }
+    LaunchedEffect(finalFirstFocusedLineIndex, showDotInIntro, showDotInPause, visibleAccompanimentIndices) {
+        if (isUserInteracting) {
+            return@LaunchedEffect
+        }
+
+        if (showDotInIntro) {
+            isScrollProgrammatically = true
+            try {
+                listState.animateScrollToItem(index = 0, scrollOffset = 0)
+            } catch (_: Exception) {
+            } finally {
+                isScrollProgrammatically = false
+            }
+            return@LaunchedEffect
+        }
+        
+        // 如果显示行间圆点，不进行滚动
+        if (showDotInPause) {
+            return@LaunchedEffect
+        }
+        
         // 目标索引 = 歌词索引 + Header数量
         val targetListIndex = finalFirstFocusedLineIndex + headerItemCount
 
         if (finalFirstFocusedLineIndex < 0 ||
-            finalFirstFocusedLineIndex >= lyrics.lines.size ||
-            isUserInteracting
+            finalFirstFocusedLineIndex >= lyrics.lines.size
         ) {
             return@LaunchedEffect
         }
@@ -197,41 +263,10 @@ fun KaraokeLyricsView(
                     scrollOffset = snapOffset
                 )
             }
-        } catch (e: Exception) {
-            debugLog = "Anim Cancel: ${e.message}"
+        } catch (_: Exception) {
         } finally {
             isScrollProgrammatically = false
         }
-    }
-
-    // 辅助变量计算
-    val firstLine = lyrics.lines.firstOrNull() ?: SyncedLine("", null, 0, 0)
-    val showDotInIntro = remember(firstLine, currentTimeMs) {
-        (firstLine.start > 5000) && (currentTimeMs in 0 until firstLine.start)
-    }
-    val allFocusedLineIndex by rememberUpdatedState(
-        lyrics.getCurrentAllHighlightLineIndicesByTime(
-            currentTimeMs
-        )
-    )
-
-    val accompanimentVisibilityRanges = remember(lyrics.lines) {
-        val map = mutableMapOf<Int, LongRange>()
-        val mainLines = lyrics.lines.filter { it !is KaraokeLine || !it.isAccompaniment }
-        if (mainLines.isNotEmpty()) {
-            lyrics.lines.forEachIndexed { index, line ->
-                if (line is KaraokeLine && line.isAccompaniment) {
-                    val entryAnchor =
-                        mainLines.findLast { it.start <= line.start } ?: mainLines.firstOrNull()
-                    val exitAnchor =
-                        mainLines.firstOrNull { it.end >= line.end } ?: mainLines.lastOrNull()
-                    val visualStartTime = (entryAnchor?.start ?: line.start) - 600L
-                    val visualEndTime = (exitAnchor?.end ?: line.end) + 600L
-                    map[index] = visualStartTime..visualEndTime
-                }
-            }
-        }
-        map
     }
 
     Crossfade(lyrics) { lyrics ->
@@ -378,11 +413,14 @@ fun KaraokeLyricsView(
 
                         is SyncedLine -> {
                             val scale by animateFloatAsState(
-                                if (isCurrentFocusLine) 1f else 0.98f,
-                                label = "scale"
+                                targetValue = if (isCurrentFocusLine) 1f else 0.98f, animationSpec = if (isCurrentFocusLine) {
+                                    tween(durationMillis = 600, easing = LinearOutSlowInEasing)
+                                } else {
+                                    tween(durationMillis = 300, easing = EaseInOut)
+                                }, label = "scale"
                             )
                             val alpha by animateFloatAsState(
-                                if (isCurrentFocusLine) 1f else 0.4f,
+                                targetValue = if (isCurrentFocusLine) 1f else 0.4f ,
                                 label = "alpha"
                             )
 
