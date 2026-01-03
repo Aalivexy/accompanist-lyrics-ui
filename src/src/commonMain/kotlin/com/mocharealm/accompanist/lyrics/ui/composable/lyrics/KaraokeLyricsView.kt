@@ -65,6 +65,7 @@ import com.mocharealm.gaze.capsule.ContinuousRoundedRectangle
 import kotlin.math.abs
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.ui.graphics.Brush
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.isActive
@@ -226,21 +227,11 @@ fun KaraokeLyricsView(
         }
         map
     }
-    LaunchedEffect(showDotInIntro) {
-        if (showDotInIntro) {
-            if (!listState.isScrollInProgress) {
-                val layoutInfo = listState.layoutInfo
-                val beforeContentPadding = layoutInfo.beforeContentPadding
-                val targetVisualY = (-beforeContentPadding.toFloat()) + with(density) { 46.dp.toPx() }
-                listState.animateScrollToItem(0,targetVisualY.fastRoundToInt())
-            }
-        }
-    }
 
     LaunchedEffect(
         firstFocusedLineIndex
     ) {
-        if (listState.phase == ListScrollPhase.Idle) {
+        if (!listState.isScrollInProgress) {
             listState.animateScrollToItem(
                 firstFocusedLineIndex, 200
             )
