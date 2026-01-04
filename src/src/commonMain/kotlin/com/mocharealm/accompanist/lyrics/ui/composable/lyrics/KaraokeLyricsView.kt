@@ -3,9 +3,7 @@ package com.mocharealm.accompanist.lyrics.ui.composable.lyrics
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.ExperimentalSharedTransitionApi
-import androidx.compose.animation.core.EaseInOut
-import androidx.compose.animation.core.LinearOutSlowInEasing
-import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.EaseIn
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -15,8 +13,7 @@ import androidx.compose.animation.scaleOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
-import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
@@ -29,7 +26,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.LocalTextStyle
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
@@ -40,12 +36,9 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.TransformOrigin
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -64,7 +57,6 @@ import com.mocharealm.accompanist.lyrics.core.model.karaoke.KaraokeLine
 import com.mocharealm.accompanist.lyrics.core.model.synced.SyncedLine
 import com.mocharealm.accompanist.lyrics.ui.utils.isRtl
 import com.mocharealm.accompanist.lyrics.ui.utils.modifier.dynamicFadingEdge
-import com.mocharealm.gaze.capsule.ContinuousRoundedRectangle
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
@@ -107,7 +99,8 @@ fun KaraokeLyricsView(
     val stableAccompanimentTextStyle =
         remember(accompanimentLineTextStyle) { accompanimentLineTextStyle }
     val stableOffset = remember(offset) { offset }
-    val stableOffsetPx = remember(stableOffset) { with(density) { stableOffset.toPx().fastRoundToInt() } }
+    val stableOffsetPx =
+        remember(stableOffset) { with(density) { stableOffset.toPx().fastRoundToInt() } }
     val stableBlendMode = remember(blendMode) { blendMode }
 
     val textMeasurer = rememberTextMeasurer()
@@ -233,9 +226,18 @@ fun KaraokeLyricsView(
         firstFocusedLineIndex
     ) {
         if (!listState.isScrollInProgress) {
-            listState.animateScrollToItem(
-                firstFocusedLineIndex, -stableOffsetPx
-            )
+            val items = listState.layoutInfo.visibleItemsInfo
+            val targetItem = items.firstOrNull { it.index == firstFocusedLineIndex }
+            val scrollOffset =
+                (targetItem?.offset?.minus(listState.layoutInfo.viewportStartOffset + stableOffsetPx))?.toFloat()
+            try {
+                if (scrollOffset != null) {
+                    listState.animateScrollBy(scrollOffset, tween(600, 0, EaseIn))
+                } else {
+                    listState.animateScrollToItem(firstFocusedLineIndex, stableOffsetPx)
+                }
+            } catch (_: Exception) {
+            }
         }
     }
 
@@ -366,66 +368,15 @@ fun KaraokeLyricsView(
                         }
 
                         is SyncedLine -> {
-                            val isLineRtl =
-                                remember(line.content) { line.content.isRtl() }
-                            val scaleState = animateFloatAsState(
-                                targetValue = if (isCurrentFocusLine) 1f else 0.98f,
-                                animationSpec = if (isCurrentFocusLine) {
-                                    tween(durationMillis = 600, easing = LinearOutSlowInEasing)
-                                } else {
-                                    tween(durationMillis = 300, easing = EaseInOut)
-                                },
-                                label = "scale"
+                            SyncedLineItem(
+                                line = line,
+                                isFocused = isCurrentFocusLine,
+                                onLineClicked = onLineClicked,
+                                onLinePressed = onLinePressed,
+                                textStyle = stableNormalTextStyle.copy(lineHeight = 1.2.em),
+                                textColor = textColor,
+                                blendMode = stableBlendMode
                             )
-                            val alphaState = animateFloatAsState(
-                                targetValue = if (isCurrentFocusLine) 1f else 0.4f,
-                                label = "alpha"
-                            )
-
-                            Box(
-                                modifier = Modifier.fillMaxWidth().graphicsLayer {
-//                                        val radius = blurRadiusState.value.toPx()
-//                                        if (radius > 0f) {
-//                                            createBlurEffect(
-//                                                radius,
-//                                                radius,
-//                                                TileMode.Decal
-//                                            )?.let { platformRenderEffect ->
-//                                                convertToComposeRenderEffect(platformRenderEffect)?.let { renderEffect ->
-//                                                    this.renderEffect = renderEffect
-//                                                }
-//                                            }
-//                                        } else {
-//                                            renderEffect = null
-//                                        }
-
-                                    scaleX = scaleState.value
-                                    scaleY = scaleState.value
-                                    alpha = alphaState.value
-                                    transformOrigin =
-                                        TransformOrigin(if (isLineRtl) 1f else 0f, 1f)
-                                    this.blendMode = stableBlendMode
-                                    compositingStrategy = CompositingStrategy.Offscreen
-                                }.clip(ContinuousRoundedRectangle(8.dp)).combinedClickable(
-                                    onClick = { onLineClicked(line) },
-                                    onLongClick = { onLinePressed(line) })
-                            ) {
-                                Column(
-                                    Modifier.align(Alignment.TopStart)
-                                        .padding(vertical = 8.dp, horizontal = 16.dp)
-                                ) {
-                                    Text(
-                                        line.content,
-                                        style = normalLineTextStyle.copy(lineHeight = 1.2f.em),
-                                        color = textColor
-                                    )
-                                    line.translation?.let {
-                                        Text(
-                                            it, color = textColor.copy(0.6f)
-                                        )
-                                    }
-                                }
-                            }
                         }
                     }
                 }
