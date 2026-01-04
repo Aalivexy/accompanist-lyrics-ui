@@ -14,7 +14,8 @@ import com.mocharealm.accompanist.lyrics.ui.utils.LayerPaint
 fun Modifier.dynamicFadingEdge(
     listState: LazyListState,
     index: Int,
-    fadeHeight: Dp = 100.dp
+    topFadeHeight: Dp = 20.dp,
+    bottomFadeHeight: Dp = 100.dp
 ): Modifier = this.drawWithContent {
     val layoutInfo = listState.layoutInfo
     val visibleItems = layoutInfo.visibleItemsInfo
@@ -25,16 +26,17 @@ fun Modifier.dynamicFadingEdge(
         return@drawWithContent
     }
 
-    val fadeHeightPx = fadeHeight.toPx()
+    val topFadeHeightPx = topFadeHeight.toPx()
+    val bottomFadeHeightPx = bottomFadeHeight.toPx()
 
     val containerHeight = layoutInfo.viewportSize.height.toFloat()
 
     val itemTop = (itemInfo.offset + layoutInfo.beforeContentPadding).toFloat()
     val itemBottom = itemTop + itemInfo.size.toFloat()
 
-    val touchesTop = itemTop < fadeHeightPx
+    val touchesTop = itemTop < topFadeHeightPx
 
-    val touchesBottom = itemBottom > (containerHeight - fadeHeightPx)
+    val touchesBottom = itemBottom > (containerHeight - bottomFadeHeightPx)
 
     if (!touchesTop && !touchesBottom) {
         drawContent()
@@ -50,7 +52,7 @@ fun Modifier.dynamicFadingEdge(
 
     if (touchesTop) {
         val gradientStart = -itemTop
-        val gradientEnd = fadeHeightPx - itemTop
+        val gradientEnd = topFadeHeightPx - itemTop
 
         drawRect(
             brush = Brush.verticalGradient(
@@ -64,7 +66,7 @@ fun Modifier.dynamicFadingEdge(
     }
 
     if (touchesBottom) {
-        val gradientStart = (containerHeight - fadeHeightPx) - itemTop
+        val gradientStart = (containerHeight - bottomFadeHeightPx) - itemTop
         val gradientEnd = containerHeight - itemTop
 
         drawRect(
